@@ -109,7 +109,7 @@
     <div class="flex items-center justify-between mb-3">
       <div>
         <h2 class="font-bold text-slate-700">祝日・祝前日 補正のデフォルト値</h2>
-        <p class="text-xs text-slate-400 mt-0.5">2027年9月までの日本の国民の祝日・振替休日・国民の休日を内蔵しています。個別の日付ごとのON/OFFや倍率の上書きは、下の日別予算テーブル上で直接編集できます。</p>
+        <p class="text-xs text-slate-400 mt-0.5">2027年9月までの日本の国民の祝日・振替休日・国民の休日を内蔵しています。祝前日が土曜・日曜にあたる場合は「祝日」として扱い、祝日補正を適用します。個別の日付ごとのON/OFFや倍率の上書きは、下の日別予算テーブル上で直接編集できます。</p>
       </div>
       <button id="resetHolidayRateBtn" class="text-xs border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 whitespace-nowrap">初期値に戻す</button>
     </div>
@@ -340,11 +340,17 @@ function saveHolidayOverrides(){
   localStorage.setItem(HOLIDAY_OVERRIDE_STORAGE_KEY, JSON.stringify(holidayOverrides));
 }
 
-/* 指定日の区分('holiday' | 'zenjitsu' | 'normal')を判定 */
+/* 指定日の区分('holiday' | 'zenjitsu' | 'normal')を判定
+   ※ 祝前日が土曜・日曜にあたる場合は「祝日」扱いとする(祝前日補正ではなく祝日補正を適用) */
 function classifyDate(iso){
   if(HOLIDAYS[iso]) return 'holiday';
   const nextDay = addDaysISO(iso, 1);
-  if(HOLIDAYS[nextDay]) return 'zenjitsu';
+  if(HOLIDAYS[nextDay]){
+    const [y,m,d] = iso.split('-').map(Number);
+    const dow = new Date(y, m-1, d).getDay(); // 0:日 1:月 ... 6:土
+    if(dow === 0 || dow === 6) return 'holiday'; // 土日の祝前日 → 祝日扱い
+    return 'zenjitsu';
+  }
   return 'normal';
 }
 
@@ -610,7 +616,7 @@ function render(){
     if(d.kind === 'holiday') rowBg = 'holiday-row';
     else if(d.kind === 'zenjitsu') rowBg = 'zenjitsu-row';
     const dateStr = `${d.date.getFullYear()}/${String(d.date.getMonth()+1).padStart(2,'0')}/${String(d.date.getDate()).padStart(2,'0')}`;
-    const holidayName = HOLIDAYS[d.iso] || (d.kind==='zenjitsu' ? (HOLIDAYS[addDaysISO(d.iso,1)]||'') : '');
+    const holidayName = HOLIDAYS[d.iso] || HOLIDAYS[addDaysISO(d.iso,1)] || '';
 
     let badgeHtml, controlHtml;
     if(d.kind === 'normal'){
