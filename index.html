@@ -17,6 +17,7 @@
   input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   .badge { display:inline-block; font-size:10px; font-weight:600; padding:1px 6px; border-radius:9999px; }
   .badge-holiday { background:#fecaca; color:#991b1b; }
+  .badge-lastday { background:#fde68a; color:#92400e; }
   .badge-zenjitsu { background:#fed7aa; color:#9a3412; }
   .badge-normal { background:#e2e8f0; color:#475569; }
 </style>
@@ -99,8 +100,8 @@
     <div id="dayFactorGrid" class="grid grid-cols-4 xs:grid-cols-5 sm:grid-cols-7 md:grid-cols-8 gap-2"></div>
     <div class="flex flex-wrap gap-3 mt-3 text-xs text-slate-400">
       <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#fef3c7"></span>月初(1〜3日) 1.05</span>
-      <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#fee2e2"></span>給料日直後(25〜27日) 1.15</span>
-      <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#dbeafe"></span>月末(28〜31日) 1.08</span>
+      <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#fee2e2"></span>給料日直後(25〜27日) 1.13</span>
+      <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#dbeafe"></span>月末(28〜31日) 1.13</span>
     </div>
   </section>
 
@@ -108,24 +109,28 @@
   <section id="holidayPanel" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 mb-6">
     <div class="flex items-center justify-between mb-3">
       <div>
-        <h2 class="font-bold text-slate-700">祝日・祝前日 補正のデフォルト値</h2>
-        <p class="text-xs text-slate-400 mt-0.5">2027年9月までの日本の国民の祝日・振替休日・国民の休日を内蔵しています。祝前日が土曜・日曜にあたる場合は「祝日」として扱い、祝日補正を適用します。個別の日付ごとのON/OFFや倍率の上書きは、下の日別予算テーブル上で直接編集できます。</p>
+        <h2 class="font-bold text-slate-700">店舗別 祝前日 補正倍率 / 連休最終日の調整(編集可)</h2>
+        <p class="text-xs text-slate-400 mt-0.5">2027年9月までの日本の国民の祝日・振替休日・国民の休日を内蔵しています。祝前日が土曜・日曜にあたる場合は「祝日」として扱います。<br><b>祝日当日の売上は、店舗ごとの「通常の日曜」の曜日構成比と同水準になるよう自動計算されます。</b>ただし、祝日が3日以上連続する連休の場合、その最終日は下記の逓減係数を掛けて日曜よりやや低めに調整します。祝前日は、店舗ごとの過去の傾向に合わせて倍率を個別設定してください(初期値は暫定で全店1.48)。特定の日付だけさらに調整したい場合は、下の日別予算テーブル上でも上書きできます。</p>
       </div>
       <button id="resetHolidayRateBtn" class="text-xs border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 whitespace-nowrap">初期値に戻す</button>
     </div>
-    <div class="grid grid-cols-2 gap-4 max-w-md">
-      <div>
-        <label class="block text-xs font-semibold text-slate-500 mb-1">祝日補正(当日)</label>
-        <input id="holidayRateInput" type="number" step="0.01" min="0"
-          class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-slate-500 mb-1">祝前日補正</label>
-        <input id="zenjitsuRateInput" type="number" step="0.01" min="0"
-          class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-      </div>
+    <div class="mb-4 max-w-xs">
+      <label class="block text-xs font-semibold text-slate-500 mb-1">3連休以上の場合、最終日の逓減係数</label>
+      <input id="lastDayFactorInput" type="number" step="0.01" min="0" max="1"
+        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      <p class="text-[11px] text-slate-400 mt-1">例:0.90 なら、連休最終日は「日曜構成比 × 0.90」を使用(全店共通)</p>
     </div>
-    <p class="text-xs text-slate-400 mt-3">※ ここで変更した値は、個別に上書きしていない全ての祝日・祝前日に適用されます。</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm max-w-md">
+        <thead>
+          <tr class="text-slate-500 border-b border-slate-200">
+            <th class="text-left py-2 pr-2 sticky left-0 bg-white">店舗</th>
+            <th class="px-1 py-2">祝前日倍率</th>
+          </tr>
+        </thead>
+        <tbody id="holidayRateTableBody"></tbody>
+      </table>
+    </div>
   </section>
 
   <!-- サマリー(選択店舗の構成比) -->
@@ -203,6 +208,12 @@ const DEFAULT_STORES = Object.keys(storeData).map(name => ({
   ratios: DOW_LABELS.map(dow => storeData[name][dow])
 }));
 
+/* 店舗ごとの祝前日 補正倍率(初期値)
+   ※ 祝日当日は「通常の日曜」と同水準の売上とみなすため、店舗ごとの倍率設定は不要(常に日曜構成比を使用)。
+     祝前日のみ、過去の店舗別傾向が判明した店舗から個別に調整してください。 */
+const DEFAULT_ZENJITSU_RATE = 1.48;
+const DEFAULT_STORE_HOLIDAY_RATES = DEFAULT_STORES.map(() => ({ zenjitsu: DEFAULT_ZENJITSU_RATE }));
+
 /* =========================================================
    祝日データ(内閣府発表・令和8年/令和9年 = 2026年/2027年)
    「休日」(振替休日・国民の休日)も祝日として扱う
@@ -258,26 +269,28 @@ function addDaysISO(iso, delta){
 
 const STORAGE_KEY = "cona_daily_budget_ratios_v3";
 const DAY_FACTOR_STORAGE_KEY = "cona_daily_budget_dayfactors_v3";
-const HOLIDAY_RATE_STORAGE_KEY = "cona_daily_budget_holidayrate_v3";
+const HOLIDAY_RATE_STORAGE_KEY = "cona_daily_budget_holidayrate_store_v5";
 const HOLIDAY_OVERRIDE_STORAGE_KEY = "cona_daily_budget_holidayoverride_v3";
+const LAST_DAY_FACTOR_STORAGE_KEY = "cona_daily_budget_lastdayfactor_v1";
 
 /* =========================================================
    初期データ:日付別傾向係数(1日〜31日・全店共通)
    月初(1〜3日):1.05 / 中旬(4〜24日):1.00
-   給料日直後(25〜27日):1.15 / 月末(28〜31日):1.08
+   25日以降(給料日直後〜月末):1.13で統一(全店に反映)
    ========================================================= */
 const DEFAULT_DAY_FACTORS = [
   1.05, 1.05, 1.05,                                  // 1-3日:月初
   1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,          // 4-10日
   1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,          // 11-17日
   1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,          // 18-24日
-  1.15, 1.15, 1.15,                                  // 25-27日:給料日直後
-  1.08, 1.08, 1.08, 1.08,                            // 28-31日:月末
+  1.13, 1.13, 1.13,                                  // 25-27日:給料日直後
+  1.13, 1.13, 1.13, 1.13,                            // 28-31日:月末
 ];
 
-const DEFAULT_HOLIDAY_RATES = { holiday: 1.13, zenjitsu: 1.48 };
+/* 3連休以上の場合、連休最終日は日曜構成比よりやや低めに調整する(逓減係数) */
+const DEFAULT_LAST_DAY_FACTOR = 0.90;
 
-/* 対象年月レンジ:現在〜2027年9月(祝日データの都合上、上限は2027年9月まで) */
+/* ---------------- 対象年月レンジ ---------------- */
 const NOW = new Date();
 const YEAR_MONTH_RANGE = {
   startY: NOW.getFullYear(), startM: NOW.getMonth()+1,
@@ -287,8 +300,9 @@ const YEAR_MONTH_RANGE = {
 /* ---------------- state ---------------- */
 let stores = loadRatios();
 let dayFactors = loadDayFactors();
-let holidayRates = loadHolidayRates();
+let storeHolidayRates = loadStoreHolidayRates(); // [{zenjitsu}, ...] 店舗と同じ並び順
 let holidayOverrides = loadHolidayOverrides(); // { 'YYYY-MM-DD': { enabled: bool, rate: number|null } }
+let lastDayFactor = loadLastDayFactor();
 
 function loadRatios(){
   try{
@@ -316,17 +330,19 @@ function saveDayFactors(){
   localStorage.setItem(DAY_FACTOR_STORAGE_KEY, JSON.stringify(dayFactors));
 }
 
-function loadHolidayRates(){
+function loadStoreHolidayRates(){
   try{
     const saved = JSON.parse(localStorage.getItem(HOLIDAY_RATE_STORAGE_KEY));
-    if(saved && typeof saved.holiday === 'number' && typeof saved.zenjitsu === 'number'){
-      return { holiday: saved.holiday, zenjitsu: saved.zenjitsu };
+    if(Array.isArray(saved) && saved.length === DEFAULT_STORES.length){
+      return saved.map(r => ({
+        zenjitsu: (typeof r.zenjitsu === 'number' && !isNaN(r.zenjitsu)) ? r.zenjitsu : DEFAULT_ZENJITSU_RATE,
+      }));
     }
   }catch(e){}
-  return { ...DEFAULT_HOLIDAY_RATES };
+  return DEFAULT_STORE_HOLIDAY_RATES.map(r => ({ ...r }));
 }
-function saveHolidayRates(){
-  localStorage.setItem(HOLIDAY_RATE_STORAGE_KEY, JSON.stringify(holidayRates));
+function saveStoreHolidayRates(){
+  localStorage.setItem(HOLIDAY_RATE_STORAGE_KEY, JSON.stringify(storeHolidayRates));
 }
 
 function loadHolidayOverrides(){
@@ -338,6 +354,17 @@ function loadHolidayOverrides(){
 }
 function saveHolidayOverrides(){
   localStorage.setItem(HOLIDAY_OVERRIDE_STORAGE_KEY, JSON.stringify(holidayOverrides));
+}
+
+function loadLastDayFactor(){
+  try{
+    const v = parseFloat(localStorage.getItem(LAST_DAY_FACTOR_STORAGE_KEY));
+    if(!isNaN(v)) return v;
+  }catch(e){}
+  return DEFAULT_LAST_DAY_FACTOR;
+}
+function saveLastDayFactor(){
+  localStorage.setItem(LAST_DAY_FACTOR_STORAGE_KEY, String(lastDayFactor));
 }
 
 /* 指定日の区分('holiday' | 'zenjitsu' | 'normal')を判定
@@ -352,6 +379,20 @@ function classifyDate(iso){
     return 'zenjitsu';
   }
   return 'normal';
+}
+
+/* 指定日が属する「祝日の連続日数(連休)」を判定する。
+   祝日でなければnull。祝日なら { length, isLastDay } を返す。
+   月をまたぐ連休にも対応するため、addDaysISOで前後に走査する。 */
+function getHolidayStreakInfo(iso){
+  if(classifyDate(iso) !== 'holiday') return null;
+  let start = iso, end = iso;
+  while(classifyDate(addDaysISO(start, -1)) === 'holiday'){ start = addDaysISO(start, -1); }
+  while(classifyDate(addDaysISO(end, 1)) === 'holiday'){ end = addDaysISO(end, 1); }
+  let length = 1;
+  let cursor = start;
+  while(cursor !== end){ cursor = addDaysISO(cursor, 1); length++; }
+  return { start, end, length, isLastDay: iso === end };
 }
 
 /* ---------------- init selects ---------------- */
@@ -485,43 +526,68 @@ function buildDayFactorGrid(){
 }
 buildDayFactorGrid();
 
-/* ---------------- holiday rate settings panel ---------------- */
+/* ---------------- 店舗別 祝日/祝前日 補正倍率 編集パネル ---------------- */
 const holidayPanel = document.getElementById('holidayPanel');
 document.getElementById('toggleHolidayPanel').addEventListener('click', ()=>{
   holidayPanel.classList.toggle('hidden');
 });
-const holidayRateInput = document.getElementById('holidayRateInput');
-const zenjitsuRateInput = document.getElementById('zenjitsuRateInput');
-function syncHolidayRateInputs(){
-  holidayRateInput.value = holidayRates.holiday.toFixed(2);
-  zenjitsuRateInput.value = holidayRates.zenjitsu.toFixed(2);
-}
-syncHolidayRateInputs();
-holidayRateInput.addEventListener('input', ()=>{
-  const v = parseFloat(holidayRateInput.value);
-  holidayRates.holiday = isNaN(v) ? 0 : v;
-  saveHolidayRates();
-  render();
-});
-zenjitsuRateInput.addEventListener('input', ()=>{
-  const v = parseFloat(zenjitsuRateInput.value);
-  holidayRates.zenjitsu = isNaN(v) ? 0 : v;
-  saveHolidayRates();
-  render();
-});
 document.getElementById('resetHolidayRateBtn').addEventListener('click', ()=>{
-  if(!confirm('祝日・祝前日の補正デフォルト値を初期値に戻します。個別に上書きした日付の設定は変わりません。よろしいですか?')) return;
-  holidayRates = { ...DEFAULT_HOLIDAY_RATES };
-  saveHolidayRates();
-  syncHolidayRateInputs();
+  if(!confirm('全店舗の祝前日 補正倍率、および連休最終日の逓減係数を初期値に戻します。個別の日付ごとに上書きした設定は変わりません。よろしいですか?')) return;
+  storeHolidayRates = DEFAULT_STORE_HOLIDAY_RATES.map(r => ({ ...r }));
+  saveStoreHolidayRates();
+  lastDayFactor = DEFAULT_LAST_DAY_FACTOR;
+  saveLastDayFactor();
+  syncLastDayFactorInput();
+  buildHolidayRateTable();
   render();
 });
+
+const lastDayFactorInput = document.getElementById('lastDayFactorInput');
+function syncLastDayFactorInput(){
+  lastDayFactorInput.value = lastDayFactor.toFixed(2);
+}
+syncLastDayFactorInput();
+lastDayFactorInput.addEventListener('input', ()=>{
+  const v = parseFloat(lastDayFactorInput.value);
+  lastDayFactor = isNaN(v) ? 0 : v;
+  saveLastDayFactor();
+  render();
+});
+
+function buildHolidayRateTable(){
+  const tbody = document.getElementById('holidayRateTableBody');
+  tbody.innerHTML = "";
+  stores.forEach((s, si)=>{
+    const r = storeHolidayRates[si];
+    const tr = document.createElement('tr');
+    tr.className = "border-b border-slate-100";
+    tr.innerHTML = `
+      <td class="py-1.5 pr-2 sticky left-0 bg-white whitespace-nowrap">${s.name}</td>
+      <td class="px-1 py-1">
+        <input type="number" step="0.01" min="0" value="${r.zenjitsu}" data-store="${si}"
+          class="holiday-store-rate-input w-16 text-right border border-slate-200 rounded px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400">
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.holiday-store-rate-input').forEach(inp=>{
+    inp.addEventListener('input', (e)=>{
+      const si = parseInt(e.target.dataset.store,10);
+      const val = parseFloat(e.target.value);
+      storeHolidayRates[si].zenjitsu = isNaN(val) ? 0 : val;
+      saveStoreHolidayRates();
+      render();
+    });
+  });
+}
+buildHolidayRateTable();
 
 /* ---------------- core calculation ---------------- */
 function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); } // m:1-12
 function jsDowToMonFirst(jsDow){ return jsDow===0 ? 6 : jsDow-1; } // Sun=0 -> 6, Mon=1 -> 0
 
-function computeDailyBudgets(store, dayFactorArr, rates, overrides, year, month, target){
+function computeDailyBudgets(store, dayFactorArr, storeRate, overrides, streakFactor, year, month, target){
+  const SUNDAY_IDX = 6; // DOW_LABELS = [月,火,水,木,金,土,日] → 日 = index 6
   const nDays = daysInMonth(year, month);
   const days = [];
   let totalWeight = 0;
@@ -529,24 +595,37 @@ function computeDailyBudgets(store, dayFactorArr, rates, overrides, year, month,
     const iso = toISODate(year, month, d);
     const jsDow = new Date(year, month-1, d).getDay();
     const dowIdx = jsDowToMonFirst(jsDow);
-    const dowWeight = Math.max(0, store.ratios[dowIdx] || 0);
+    const actualDowWeight = Math.max(0, store.ratios[dowIdx] || 0);
     const dayFactor = Math.max(0, dayFactorArr[d-1] != null ? dayFactorArr[d-1] : 1.0);
 
     const kind = classifyDate(iso); // 'holiday' | 'zenjitsu' | 'normal'
     const ov = overrides[iso] || {};
     const enabled = (ov.enabled !== undefined) ? ov.enabled : true;
+
+    let effectiveDowWeight = actualDowWeight;
     let specialRate = 1.0;
-    if(kind !== 'normal' && enabled){
-      const defaultRate = kind === 'holiday' ? rates.holiday : rates.zenjitsu;
-      specialRate = (typeof ov.rate === 'number' && !isNaN(ov.rate)) ? ov.rate : defaultRate;
-      specialRate = Math.max(0, specialRate);
+    let streakInfo = null;
+    let isStreakLastDay = false;
+    if(kind === 'holiday' && enabled){
+      // 祝日当日は「通常の日曜」と同水準の売上とみなす(店舗ごとの日曜構成比を使用)
+      effectiveDowWeight = Math.max(0, store.ratios[SUNDAY_IDX] || 0);
+      streakInfo = getHolidayStreakInfo(iso);
+      if(streakInfo && streakInfo.length >= 3 && streakInfo.isLastDay){
+        isStreakLastDay = true;
+        specialRate = Math.max(0, streakFactor); // 3連休以上の最終日はやや低めに調整
+      } else {
+        specialRate = 1.0;
+      }
+    } else if(kind === 'zenjitsu' && enabled){
+      const defaultRate = storeRate.zenjitsu;
+      specialRate = (typeof ov.rate === 'number' && !isNaN(ov.rate)) ? Math.max(0, ov.rate) : defaultRate;
     }
 
     const appliedFactor = dayFactor * specialRate; // 適用補正率(表示用)
-    const weight = dowWeight * appliedFactor;
+    const weight = effectiveDowWeight * appliedFactor;
     days.push({
-      date: new Date(year, month-1, d), iso, dowIdx, dowWeight, dayFactor,
-      kind, enabled, specialRate, appliedFactor, weight
+      date: new Date(year, month-1, d), iso, dowIdx, dowWeight: actualDowWeight, effectiveDowWeight, dayFactor,
+      kind, enabled, specialRate, appliedFactor, weight, isStreakLastDay, streakLength: streakInfo ? streakInfo.length : null
     });
     totalWeight += weight;
   }
@@ -606,7 +685,7 @@ function render(){
     ratioSummary.appendChild(div);
   });
 
-  const days = computeDailyBudgets(store, dayFactors, holidayRates, holidayOverrides, year, month, target);
+  const days = computeDailyBudgets(store, dayFactors, storeHolidayRates[si], holidayOverrides, lastDayFactor, year, month, target);
 
   const tbody = document.getElementById('dailyTableBody');
   tbody.innerHTML = "";
@@ -622,19 +701,32 @@ function render(){
     if(d.kind === 'normal'){
       badgeHtml = `<span class="badge badge-normal">通常</span>`;
       controlHtml = `<span class="text-slate-300">—</span>`;
-    } else {
-      const badgeClass = d.kind === 'holiday' ? 'badge-holiday' : 'badge-zenjitsu';
-      const badgeLabel = d.kind === 'holiday' ? '祝日' : '祝前日';
-      badgeHtml = `<span class="badge ${badgeClass}" title="${holidayName}">${badgeLabel}</span>`;
+    } else if(d.kind === 'holiday'){
+      const lastDayBadge = d.isStreakLastDay
+        ? `<span class="badge badge-lastday" title="${d.streakLength}連休の最終日">連休最終日</span>`
+        : '';
+      badgeHtml = `<span class="badge badge-holiday" title="${holidayName}">祝日</span>${lastDayBadge}`;
       controlHtml = `
         <label class="inline-flex items-center gap-1 text-[11px] text-slate-500">
           <input type="checkbox" data-iso="${d.iso}" class="holiday-toggle" ${d.enabled ? 'checked' : ''}>適用
         </label>
+      `;
+    } else { // zenjitsu
+      badgeHtml = `<span class="badge badge-zenjitsu" title="${holidayName}">祝前日</span>`;
+      controlHtml = `
+        <label class="inline-flex items-center gap-1 text-[11px] text-slate-500">
+          <input type="checkbox" data-iso="${d.iso}" class="holiday-toggle" ${d.enabled ? 'checked' : ''}>適用
+        </label>
+        <span class="text-[10px] text-slate-400 ml-1">倍率</span>
         <input type="number" step="0.01" min="0" data-iso="${d.iso}"
           class="holiday-rate-input w-16 text-right border border-slate-200 rounded px-1 py-0.5 text-xs ml-1 ${d.enabled ? '' : 'opacity-40'}"
           value="${d.specialRate.toFixed(2)}" ${d.enabled ? '' : 'disabled'}>
       `;
     }
+
+    const dowCellHtml = d.kind === 'holiday'
+      ? `${d.effectiveDowWeight.toFixed(1)} <span class="text-[10px] text-rose-500">(${d.isStreakLastDay ? '日曜×'+lastDayFactor.toFixed(2) : '日曜相当'})</span>`
+      : `${d.effectiveDowWeight.toFixed(1)}`;
 
     const tr = document.createElement('tr');
     tr.className = `border-b border-slate-100 ${rowBg}`;
@@ -642,7 +734,7 @@ function render(){
       <td class="py-1.5 px-2 whitespace-nowrap">${dateStr}</td>
       <td class="py-1.5 px-2">${DOW_LABELS[dowIdx]}</td>
       <td class="py-1.5 px-2 whitespace-nowrap">${badgeHtml}${d.kind!=='normal' ? '<br>'+controlHtml : ''}</td>
-      <td class="py-1.5 px-2 text-right text-slate-500">${d.dowWeight.toFixed(1)}</td>
+      <td class="py-1.5 px-2 text-right text-slate-500 whitespace-nowrap">${dowCellHtml}</td>
       <td class="py-1.5 px-2 text-right font-semibold ${d.appliedFactor>1 ? 'text-rose-600' : (d.appliedFactor<1 ? 'text-blue-600' : 'text-slate-500')}">${d.appliedFactor.toFixed(2)}</td>
       <td class="py-1.5 px-2 text-right font-semibold">${d.budget.toLocaleString()}</td>
     `;
